@@ -10,9 +10,10 @@ import (
 )
 
 // global variables to keep track of file and log capacity
-var totalMessages int
 var lineCount = 0
 var fileCount = 0
+var rotateCount = 0
+var totalTrialMessages int
 
 type Logger struct {
 	MAX_FILES          int    // max amount of files that should be filled with logs
@@ -36,9 +37,6 @@ func (l Logger) StartLogListener() (chan string, chan bool) {
 	c := make(chan string)
 	exit := make(chan bool)
 
-	totalMessages = l.MAX_FILES * l.MAX_LINES_PER_FILE
-
-	fmt.Println("Listening for logs.")
 	go l.waitForLog(c, exit)
 
 	return c, exit
@@ -47,7 +45,7 @@ func (l Logger) StartLogListener() (chan string, chan bool) {
 // call this to stop listening for logs
 func (l Logger) CallExit(exit chan bool) {
 	exit <- true
-	fmt.Println("Exited.")
+	fmt.Println("Exit Invoked.")
 }
 
 // adds a message to the logger to be logged
@@ -55,17 +53,108 @@ func (l Logger) AddMsg(c chan string, msg string) {
 	c <- msg
 }
 
-// used by LogTrial() to create random logs, this is mainly for testing
-func (l Logger) createRandomLogs(c chan string, amount_messages int) {
-	if amount_messages <= 0 {
-		log.Fatal("Must have at least one message.")
-	} else if amount_messages > l.MAX_FILES*l.MAX_LINES_PER_FILE {
-		totalMessages = l.MAX_FILES * l.MAX_LINES_PER_FILE
-	} else {
-		totalMessages = amount_messages
+// active listener that waits for an input to either logging channel or exit channel, and responds accordingly
+func (l Logger) waitForLog(c chan string, exit chan bool) {
+	fmt.Println("Listening for logs.")
+	for {
+		select {
+		case msg := <-c:
+			l.logIt(msg)
+			if l.logsFull() { // if logs have reached full capacity, exit
+				l.rotate()
+			}
+		case <-exit:
+			return
+		}
+	}
+}
+
+// selects the correct file to output to, then adds the time information to the log string and appends it to output file
+func (l Logger) logIt(msg string) {
+	l.checkForFullFile()
+	fileName := l.FILE_PREFIX + "_" + strconv.Itoa(fileCount) + ".txt"
+	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	fi, _ := file.Stat()
+	if lineCount == 0 && fi.Size() > 0 { // overwrite file contents if we're starting a new file and the file already has contents.
+		file.Truncate(0)
+		file.Seek(0, 0)
 	}
 
-	for i := 0; i < totalMessages; i++ {
+	log_msg := "[" + time.Time.String(time.Now()) + "] " + msg + "\n"
+	file.WriteString(log_msg)
+	lineCount += 1
+}
+
+// if file is full then increment the file count to start using a different, empty file
+func (l Logger) checkForFullFile() {
+	if lineCount == l.MAX_LINES_PER_FILE {
+		lineCount = 0
+		fileCount += 1
+	}
+}
+
+// checks if logs have reached full capacity
+func (l Logger) logsFull() bool {
+	return (lineCount + (fileCount * l.MAX_LINES_PER_FILE)) >= l.MAX_FILES*l.MAX_LINES_PER_FILE
+}
+
+// rotates the log files to use old ones when the current one is full
+func (l Logger) rotate() {
+	fmt.Println("Rotating")
+	fileCount = 0
+	lineCount = 0
+	rotateCount += 1
+}
+
+
+
+
+// makes n random log messages and logs them.
+func (l Logger) LogTrial(amountMessages int) {
+	totalTrialMessages = amountMessages
+
+	c := make(chan string)
+	exit := make(chan bool)
+	go l.waitForLog_trial(c, exit)
+
+	l.createRandomLogs(c, totalTrialMessages)
+
+	<-exit
+	fmt.Println("Done")
+}
+
+// log listener for trial and testing purposes, difference is that it calls exit when the chosen amount of messages are logged
+func (l Logger) waitForLog_trial(c chan string, exit chan bool) {
+	for {
+		l.logIt(<-c)
+		if l.logsFull() { // if logs have reached full capacity, exit
+			l.rotate()
+		}
+		if l.trialFinished() {
+			exit <- true
+			return
+		}
+	}
+}
+
+// checks if all the messages in the log trial have been logged
+func (l Logger) trialFinished() bool {
+	rotateAmount := rotateCount * (l.MAX_FILES * l.MAX_LINES_PER_FILE)
+	fmt.Println((lineCount + (fileCount * l.MAX_LINES_PER_FILE) + rotateAmount), (lineCount+(fileCount*l.MAX_LINES_PER_FILE)+rotateAmount) == totalTrialMessages)
+	return (lineCount + (fileCount * l.MAX_LINES_PER_FILE) + rotateAmount) == totalTrialMessages
+}
+
+// used by LogTrial() to create random logs, this is mainly for testing
+func (l Logger) createRandomLogs(c chan string, amountMessages int) {
+	if amountMessages <= 0 {
+		log.Fatal("Must have at least one message.") // change
+	}
+	for i := 0; i < amountMessages; i++ {
 		c <- l.createRandomLog()
 	}
 }
@@ -84,64 +173,4 @@ func (l Logger) createRandomLog() string {
 	}
 
 	return msg
-}
-
-// active listener that waits for an input to either logging channel or exit channel, and responds accordingly
-func (l Logger) waitForLog(c chan string, exit chan bool) {
-	for {
-		select {
-		case msg := <-c:
-			if l.logsFull() { // if logs have reached full capacity, exit
-				l.logIt(msg)
-				exit <- true
-
-			} else {
-				l.logIt(msg)
-			}
-		case <-exit:
-			return
-		}
-	}
-}
-
-// selects the correct file to output to, then adds the time information to the log string and appends it to output file
-func (l Logger) logIt(msg string) {
-	l.checkForFullFile()
-
-	fileName := l.FILE_PREFIX + "_" + strconv.Itoa(fileCount) + ".txt"
-	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-
-	log_msg := "[" + time.Time.String(time.Now()) + "] " + msg + "\n"
-	file.WriteString(log_msg)
-
-	lineCount += 1
-}
-
-// if file is full then increment the file count to start using a different, empty file
-func (l Logger) checkForFullFile() {
-	if lineCount == l.MAX_LINES_PER_FILE {
-		lineCount = 0
-		fileCount += 1
-	}
-}
-
-// checks if logs have reached full capacity
-func (l Logger) logsFull() bool {
-	return ((lineCount + 1) + (fileCount * 8)) >= totalMessages
-}
-
-// makes n random log messages and logs them.
-func (l Logger) LogTrial(totalMessages int) {
-	c := make(chan string)
-	exit := make(chan bool)
-	go l.waitForLog(c, exit)
-
-	l.createRandomLogs(c, totalMessages)
-
-	<-exit
-	fmt.Println("Done")
 }
