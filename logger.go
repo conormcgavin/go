@@ -21,8 +21,15 @@ type Logger struct {
 	FILE_PREFIX        string // prefix for log output files
 }
 
-// creates a new Logger struct and returns it
+// creates a new Logger struct and returns it. Set to 0 or lower to work with default config
 func NewLogger(MAX_FILES int, MAX_LINES_PER_FILE int, FILE_PREFIX string) Logger {
+	if MAX_FILES <= 0 {
+		MAX_FILES = 8
+	}
+	if MAX_LINES_PER_FILE <= 0 {
+		MAX_LINES_PER_FILE = 256
+	}
+
 	logger := Logger{
 		MAX_FILES:          MAX_FILES,
 		MAX_LINES_PER_FILE: MAX_LINES_PER_FILE,
@@ -110,9 +117,6 @@ func (l Logger) rotate() {
 	lineCount = 0
 	rotateCount += 1
 }
-
-
-
 
 // makes n random log messages and logs them.
 func (l Logger) LogTrial(amountMessages int) {
