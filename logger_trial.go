@@ -1,4 +1,4 @@
-package main
+package logger
 
 import (
 	"fmt"
@@ -6,11 +6,13 @@ import (
 	"math/rand"
 )
 
+var totalTrialMessages int
+
 type LogTrialler interface {
-	LogTrial(int)
+	LogTrial(int, bool)
 	waitForLog_trial(chan string, chan bool)
 	trialFinished() bool
-	createRandomLogs(chan string, int)
+	createRandomLogs(chan string, int, bool)
 }
 
 type logTrialler struct {
@@ -29,14 +31,14 @@ func NewLogTrialler(l Logger) (LogTrialler, error) {
 }
 
 // makes n random log messages and logs them.
-func (lt logTrialler) LogTrial(amountMessages int) {
+func (lt logTrialler) LogTrial(amountMessages int, testing bool) {
 	totalTrialMessages = amountMessages
 
 	c := make(chan string)
 	exit := make(chan bool)
 	go lt.waitForLog_trial(c, exit)
 
-	lt.createRandomLogs(c, totalTrialMessages)
+	lt.createRandomLogs(c, amountMessages, testing)
 
 	<-exit
 	fmt.Println("Done")
@@ -59,17 +61,22 @@ func (lt logTrialler) waitForLog_trial(c chan string, exit chan bool) {
 // checks if all the messages in the log trial have been logged
 func (lt logTrialler) trialFinished() bool {
 	rotateAmount := rotateCount * (lt.logger.GetMaxFiles() * lt.logger.GetMaxLinesPerFile())
-	fmt.Println((lineCount + (fileCount * lt.logger.GetMaxLinesPerFile()) + rotateAmount), (lineCount+(fileCount*lt.logger.GetMaxLinesPerFile())+rotateAmount) == totalTrialMessages)
 	return (lineCount + (fileCount * lt.logger.GetMaxLinesPerFile()) + rotateAmount) == totalTrialMessages
 }
 
 // used by LogTrial() to create random logs, this is mainly for testing
-func (lt logTrialler) createRandomLogs(c chan string, amountMessages int) {
+func (lt logTrialler) createRandomLogs(c chan string, amountMessages int, testing bool) {
 	if amountMessages <= 0 {
 		log.Fatal("Must have at least one message.") // change
 	}
-	for i := 0; i < amountMessages; i++ {
-		c <- createRandomLog()
+	if testing {
+		for i := 0; i < amountMessages; i++ {
+			c <- "Test"
+		}
+	} else {
+		for i := 0; i < amountMessages; i++ {
+			c <- createRandomLog()
+		}
 	}
 }
 
@@ -88,3 +95,4 @@ func createRandomLog() string {
 
 	return msg
 }
+

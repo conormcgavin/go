@@ -1,4 +1,4 @@
-package main
+package logger
 
 import (
 	"fmt"
@@ -7,11 +7,13 @@ import (
 	"time"
 )
 
+const DEFAULT_MAX_FILES = 8
+const DEFAULT_MAX_LINES = 512
+
 // global variables to keep track of file and log capacity
 var lineCount = 0
 var fileCount = 0
 var rotateCount = 0
-var totalTrialMessages int
 
 type Logger interface {
 	StartLogListener() (chan string, chan bool)
@@ -21,9 +23,6 @@ type Logger interface {
 	GetMaxFiles() int
 	GetMaxLinesPerFile() int
 	GetFilePrefix() string
-	SetMaxFiles(maxFiles int)
-	SetMaxLinesPerFile(maxLines int)
-	SetFilePrefix(prefix string)
 
 	waitForLog(chan string, chan bool)
 	checkForFullFile()
@@ -44,10 +43,10 @@ func newLogger(MAX_FILES int, MAX_LINES_PER_FILE int, FILE_PREFIX string) (*logg
 		return nil, fmt.Errorf("amount and capacity of files must be over 0")
 	}
 	if MAX_FILES == 0 {
-		MAX_FILES = 8
+		MAX_FILES = DEFAULT_MAX_FILES
 	}
 	if MAX_LINES_PER_FILE == 0 {
-		MAX_LINES_PER_FILE = 8
+		MAX_LINES_PER_FILE = DEFAULT_MAX_LINES
 	}
 
 	var l logger
@@ -78,6 +77,7 @@ func (l logger) StartLogListener() (chan string, chan bool) {
 func (l logger) CallExit(exit chan bool) {
 	exit <- true
 	fmt.Println("Exit Invoked.")
+	reset()
 }
 
 // adds a message to the logger to be logged
@@ -145,6 +145,12 @@ func (l logger) rotate() {
 	rotateCount += 1
 }
 
+func reset() {
+	lineCount = 0
+	fileCount = 0
+	rotateCount = 0
+}
+
 func (l *logger) GetMaxFiles() int {
 	return l.MAX_FILES
 }
@@ -155,16 +161,4 @@ func (l *logger) GetMaxLinesPerFile() int {
 
 func (l *logger) GetFilePrefix() string {
 	return l.FILE_PREFIX
-}
-
-func (l *logger) SetMaxFiles(maxFiles int) {
-	l.MAX_FILES = maxFiles
-}
-
-func (l *logger) SetMaxLinesPerFile(maxLines int) {
-	l.MAX_LINES_PER_FILE = maxLines
-}
-
-func (l *logger) SetFilePrefix(prefix string) {
-	l.FILE_PREFIX = prefix
 }
